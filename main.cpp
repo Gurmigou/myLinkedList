@@ -41,10 +41,7 @@ int main() {
 //    reader.close();
 //    cout << value << ", " << readNumber << ", " << readAnother;
 
-//    TextDataBase::runDataBase();
-
-
-
+    TextDataBase::runDataBase();
 
     return 0;
 }

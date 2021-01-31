@@ -14,8 +14,8 @@ using namespace std;
 class TextDataBase {
 private:
     /* Meta info */
-    // File contains info about table name and its internal id
-    inline static const string nameIdAvailableFileMeta =
+    // File contains names of existing tables
+    inline static const string availableTablesFileMeta =
             "C:\\Users\\Yehor\\CLionProjects\\UnivProject\\"
             "MyDataBase\\AvailableTables\\NameIdAllTables.bin";
 
@@ -37,31 +37,17 @@ private:
     int rowSizeBytes; // size of row in bytes
     int stringSize;   // number of chars used in each string
 
+    // the name of the table
+    string tableName;
     // path to the table
     string pathDB;
-
     // path to the file of serialization
     string serialPathDB;
 
     // may contain: string, int, double types
-    vector<string>& columnTypes; // each element 7 bytes
+    vector<string>& columnTypes; // each element 10 bytes
     vector<string>& columnNames; // each element 30 bytes
     vector<int>& deletedLines;   // each element 4 bytes
-
-    /*  Serialization */
-    /*  Instruction:
-     *  1) save [numRows]       4 bytes
-     *  2) save [numColumns]    4 bytes
-     *  3) save [rowSizeBytes]  4 bytes
-     *  4) save [stringSize]    4 bytes
-     *  5) save [pathDB]        80 bytes
-     *
-     *  (*) save columnTypes.size() integer
-     *  6) save [columnTypes]   7 bytes  * elements.size()
-     *
-     *  (*) save columnNames.size() integer
-     *  7) save [columnNames]   30 bytes * elements.size()
-     */
 
     /**
      *  Processes incoming commands.
@@ -86,24 +72,34 @@ private:
     void write(vector<string>& words);
 
     // Helper methods for reading operation //
-    int intReading(ifstream& input);
-
-    double doubleReading(ifstream& input);
-
-    string strReading(ifstream& input);
+    static int intReading(ifstream& input);
+    static double doubleReading(ifstream& input);
+    static string strReading(ifstream& input, int strSize);
 
     // Helper methods for writing operation //
-    void intWriting(ofstream& output, int value);
+    static void intWriting(ofstream& output, int value);
+    static void doubleWriting(ofstream& output, double value);
+    static void strWriting(ofstream& output, string& value, int strSize);
 
-    void doubleWriting(ofstream& output, double value);
+    /**
+     * @param tableName - name of the current table
+     * @return a path where data of DB is stored
+     */
+    static string createPathDB(string& tableName);
 
-    void strWriting(ofstream& output, string& value);
+    /**
+     * @param tableName - name of the current table
+     * @return a path where DB object is serialized
+     */
+    static string createSerialPathDB(string& tableName);
 
     /**
      * Checks if a string {@code str} is a number
      * @return {@code true} is {@code str} is a number. Otherwise, false
      */
     bool stringIsNumber(string& str);
+
+    void printTableColumnNames();
 
     /**
      * Parses a string to a vector of words
@@ -123,23 +119,42 @@ private:
      * Prints available tables. In other words, it prints
      * names of tables which have been already created
      * @param reader - an input stream
-     * @return {@code map} which represents file names
-     *          and ids which correspond to them;
+     * @return {@code vector} which contains file names
      */
-    unordered_map<string, string>& printAvailableTables(ifstream& reader);
+    static vector<string>& printAvailableTables(ifstream& reader);
 
     /**
      * @param reader - an input stream
      * @return {@code true} is there is at least one table available. Otherwise {@code false}
      */
-    bool checkAnyTableIsAvailable(ifstream& reader);
+    static bool checkAnyTableIsAvailable(ifstream& reader);
 
     /**
-     * @param id - id of selected table
-     * @return serial path of selected table, where
-     *         SERIAL_PATH = DIR_PATH + ID_PATH
+     * Checks if a {@code vector} contains {@code str} value
+     * @return {@code true} if contains. Otherwise, {@code false}
      */
-    string getSerialPathByName(string& name, unordered_map<string, string>& namesIdsMap);
+    static bool contains(vector<string>& vector, string& str);
+
+    /**
+     * @param reader - an input object
+     * @return a number of files which are now stored in {@code NameIdAllTables} file
+     */
+    static int getNumOfAvailableFiles(ifstream& reader);
+
+    /*  Serialization */
+    /*  Instruction:
+     *  1) save [numRows]       4 bytes
+     *  2) save [numColumns]    4 bytes
+     *  3) save [rowSizeBytes]  4 bytes
+     *  4) save [stringSize]    4 bytes
+     *  5) save [tableName]     30 bytes
+     *
+     *  (*) save columnTypes.size() integer
+     *  6) save [columnTypes]   7 bytes  * elements.size()
+     *
+     *  (*) save columnNames.size() integer
+     *  7) save [columnNames]   30 bytes * elements.size()
+     */
 
     /**
      * Serializes current object into the file {@code serialPathDB}
@@ -147,26 +162,28 @@ private:
      */
     void serializeTable(string& serialPath);
 
-    template<typename TYPE>
-    void serializeVectorHelper(ofstream& input, vector<TYPE>& vector, int oneByteSize);
+    // This method helps to serialize vectors
+    void serializeVectorHelper(ofstream& output, vector<string>& vector,
+                                        int oneDataBlockSize);
 
     /**
      * Creates an object of data base using existing data
      * @param serialPath - a path where serial data of the current table is stored
      * @return {@code TextDataBase} object
      */
-    TextDataBase& deserializeTable(string& serialPath);
+    static TextDataBase* deserializeTable(string& serialPath);
 
-    template<typename TYPE>
-    void deserializeVectorHelper(ifstream& input, vector<TYPE>& vector, int oneByteSize);
+    // This method helps to deserialize vectors
+    static void deserializeVectorHelper(ifstream& input, vector<string>& vector,
+                                        int oneDataBlockSize);
 
     // destructor
-    virtual ~TextDataBase();
+    ~TextDataBase();
 
     // constructor
-    TextDataBase(int stringSize, vector<string> &columnTypes,
-                 vector<string> &columnNames, vector<int>& deletedLines,
-                 int numColumns,  string& dbFileName, int dbSerialId);
+    TextDataBase(int stringSize, vector<string>& columnTypes,
+                 vector<string>& columnNames, vector<int>& deletedLines,
+                 int numColumns,  string& dbFileName);
 
     // default constructor
     TextDataBase(vector<string>& columnNames,
@@ -180,6 +197,5 @@ public:
      */
     static void runDataBase();
 };
-
 
 #endif //UNIVPROJECT_TEXTDATABASE_H
