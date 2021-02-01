@@ -7,7 +7,8 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
-#include <unordered_map>
+#include <unordered_set>
+#include <bitset>
 
 using namespace std;
 
@@ -47,7 +48,10 @@ private:
     // may contain: string, int, double types
     vector<string>& columnTypes; // each element 10 bytes
     vector<string>& columnNames; // each element 30 bytes
-    vector<int>& deletedLines;   // each element 4 bytes
+    unordered_set<int>& deletedLines;
+
+    // a sequence of 0 and 1; 0 means that line was deleted; 1 mean that line is present
+    vector<bool>* bitLines = new vector<bool>();
 
     /**
      *  Processes incoming commands.
@@ -70,6 +74,8 @@ private:
      * @param words - words to write
      */
     void write(vector<string>& words);
+
+    void deleteLine(int lineIndex);
 
     // Helper methods for reading operation //
     static int intReading(ifstream& input);
@@ -99,6 +105,9 @@ private:
      */
     bool stringIsNumber(string& str);
 
+    /**
+     * Prints names of columns of the current table
+     */
     void printTableColumnNames();
 
     /**
@@ -136,10 +145,16 @@ private:
     static bool contains(vector<string>& vector, string& str);
 
     /**
+     * Checks if a {@code set} contains {@code value} value
+     * @return {@code true} if contains. Otherwise, {@code false}
+     */
+    static bool contains(unordered_set<int>& set, int value);
+
+    /**
      * @param reader - an input object
      * @return a number of files which are now stored in {@code NameIdAllTables} file
      */
-    static int getNumOfAvailableFiles(ifstream& reader);
+    static int getNumOfAvailableFiles(ifstream& reader, int lineLengthInBytes);
 
     /*  Serialization */
     /*  Instruction:
@@ -177,18 +192,33 @@ private:
     static void deserializeVectorHelper(ifstream& input, vector<string>& vector,
                                         int oneDataBlockSize);
 
+    /**
+     * Rewrite file according to the given conditions.
+     * @param deleteContent - if is {@code true}, the file will be rewrite
+     *                        as an empty file. Moreover, if {@code deleteContent}
+     *                        value is {@code true}, a param {@code deletedLines}
+     *                        doesn't matter
+     * @param deletedLinesSet - if {@code deleteContent} is {@code false} then a file
+     *                        will be rewrite without index of lines which are
+     *                        contained in the {@code deletedLines} set
+     */
+    static void rewriteFile(TextDataBase& obj, bool deleteContent,
+                            unordered_set<int>* deletedLinesSet);
+
+    static int getRealLineIndex(vector<bool>& bits, int notRealIndex);
+
     // destructor
     ~TextDataBase();
 
     // constructor
     TextDataBase(int stringSize, vector<string>& columnTypes,
-                 vector<string>& columnNames, vector<int>& deletedLines,
+                 vector<string>& columnNames, unordered_set<int>& deletedLines,
                  int numColumns,  string& dbFileName);
 
     // default constructor
     TextDataBase(vector<string>& columnNames,
                  vector<string>& columnTypes,
-                 vector<int>& deletedLines)
+                 unordered_set<int>& deletedLines)
                  : columnNames(columnNames), columnTypes(columnTypes), deletedLines(deletedLines) {}
 
 public:

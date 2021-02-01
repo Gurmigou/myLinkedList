@@ -1,5 +1,6 @@
 // Created by Yehor on 26.01.2021.
 
+#include <time.h>
 #include "TextDataBase.h"
 
 /**
@@ -8,7 +9,7 @@
 TextDataBase::TextDataBase(int stringSize,
                            vector<string>& columnTypes,
                            vector<string>& columnNames,
-                           vector<int>& deletedLines,
+                           unordered_set<int>& deletedLines,
                            int numColumns,
                            string& tableName) :
         stringSize(stringSize), columnTypes(columnTypes),
@@ -44,18 +45,18 @@ TextDataBase::~TextDataBase() {
 
 /* Meta block start */
 
-int TextDataBase::getNumOfAvailableFiles(ifstream& reader) {
+int TextDataBase::getNumOfAvailableFiles(ifstream& reader, int lineLengthInBytes) {
     ifstream::pos_type begin = reader.tellg();
     reader.seekg(0, ios::end);
     ifstream::pos_type end = reader.tellg();
 
     // return a cursor to the begin of the file
     reader.seekg(0, ios::beg);
-    return (end - begin) / tableNameLengthMeta;
+    return (end - begin) / lineLengthInBytes;
 }
 
 bool TextDataBase::checkAnyTableIsAvailable(ifstream &reader) {
-    return getNumOfAvailableFiles(reader) != 0;
+    return getNumOfAvailableFiles(reader, tableNameLengthMeta) != 0;
 }
 
 string TextDataBase::createPathDB(string &tableName) {
@@ -68,12 +69,13 @@ string TextDataBase::createSerialPathDB(string &tableName) {
 
 // todo delete pointer!!!
 vector<string>& TextDataBase::printAvailableTables(ifstream &reader) {
-    // key: tableName <-> value: id
+
     vector<string>* availableTableNames = new vector<string>();
 
-    for (int i = 0, files = getNumOfAvailableFiles(reader); i < files; ++i) {
+    for (int i = 0, files =
+            getNumOfAvailableFiles(reader, tableNameLengthMeta); i < files; ++i)
+    {
         string tableNameLocal = strReading(reader, tableNameLengthMeta);
-
         // print table name
         cout << i << ") Table: " << tableNameLocal << endl;
         // add values to the vector
@@ -88,9 +90,11 @@ vector<string>& TextDataBase::printAvailableTables(ifstream &reader) {
 TextDataBase* TextDataBase::deserializeTable(string& serialPath) {
     vector<string>* colNames = new vector<string>();
     vector<string>* colTypes = new vector<string>();
-    vector<int>*    delLines = new vector<int>();
+    unordered_set<int>* delLines = new unordered_set<int>();
+
     // restored object
     TextDataBase* obj = new TextDataBase(*colNames, *colTypes, *delLines);
+
     ifstream input(serialPath, ios_base::binary);
     obj->numRows = intReading(input);
     obj->numColumns = intReading(input);
@@ -164,6 +168,10 @@ bool TextDataBase::contains(vector<string>& vector, string& str) {
     return false;
 }
 
+bool TextDataBase::contains(unordered_set<int>& set, int value) {
+    return set.find(value) != set.cend();
+}
+
 /**
  *  Runs a database
  */
@@ -181,6 +189,7 @@ void TextDataBase::runDataBase() {
         string tableChoice;
         cin >> tableChoice;
         cin.ignore(32767, '\n');
+
         if (tableChoice._Starts_with("new")) {
             // start creating a new table
             textDataBaseObj = &askInitQuestions();
@@ -207,6 +216,7 @@ void TextDataBase::runDataBase() {
                         break;
                     }
                 }
+                delete &availableTables;
             }
         } else if (tableChoice._Starts_with("stop")) {
             break;
@@ -220,21 +230,28 @@ void TextDataBase::runDataBase() {
         if (textDataBaseObj != nullptr) {
             cout << "Enter \"stop\" to terminate.\n\r"
                     "Enter \"leave\" to select a another table or create a new one. "
-                    "Commands: \n\r*) read [start] [end], \n\r*) write:" << endl;
+                    "Commands: \n\r*) read [start] [end], \n\r*) write {value}, {value},"
+                    " ... \n\r*) delete {line_index \\ all}:" << endl;
             // runs available commands
             while (true) {
                 string command;
                 getline(cin, command);
-                if (command._Starts_with("stop")) {
+
+                if (!command._Starts_with("stop") &&
+                    !command._Starts_with("leave"))
+                {
+                    (*textDataBaseObj).inputHandler(command);
+                    cout << "A command was done." << endl;
+                } else {
+                    // remove deleted lines
+                    rewriteFile(*textDataBaseObj, false,
+                                &textDataBaseObj->deletedLines);
+                    // serialize current object
                     (*textDataBaseObj).serializeTable((*textDataBaseObj).serialPathDB);
-                    fullStop = true;
-                    break;
-                } else if (command._Starts_with("leave")) {
-                    (*textDataBaseObj).serializeTable((*textDataBaseObj).serialPathDB);
+                    if (command._Starts_with("stop"))
+                        fullStop = true;
                     break;
                 }
-                (*textDataBaseObj).inputHandler(command);
-                cout << "A Command was successfully done!" << endl;
             }
         }
         if (fullStop) break;
@@ -266,11 +283,13 @@ TextDataBase& TextDataBase::askInitQuestions() {
     cin.ignore(32767, '\n');
 
     // check if sizes are equal
-    if (columnNamesLocal.size() != columnTypesLocal.size())
-        throw exception("Different number of types and names");
+    if (columnNamesLocal.size() != columnTypesLocal.size()) {
+        cout << "Error: \"Different number of types and names\"" << endl;
+        throw exception();
+    }
 
     // lines that were deleted
-    vector<int>* deletedLines = new vector<int>();
+    unordered_set<int>* deletedLines = new unordered_set<int>();
 
     // create an object
     TextDataBase* textDataBaseObj = new TextDataBase(
@@ -292,7 +311,6 @@ TextDataBase& TextDataBase::askInitQuestions() {
 }
 
 /* Meta block end */
-
 
 // A helper method: parser
 vector<string>& TextDataBase::parseToWords(string s)
@@ -316,11 +334,12 @@ vector<string>& TextDataBase::parseToWords(string s)
  *  Input Handler
  */
 void TextDataBase::inputHandler(string& commandStr) {
+    // separated words (commands)
     vector<string>& command = parseToWords(commandStr);
+
     if (command[0] == "read") {
         int readFrom = 0;
         int readEnd = numRows;
-
         if (command.size() > 1) {
             // check the string correctness
             if (command.size() >= 2 && stringIsNumber(command[1]))
@@ -330,17 +349,17 @@ void TextDataBase::inputHandler(string& commandStr) {
         }
         // check correctness of order
         if (readEnd < readFrom) {
-            cout << "Error: \"\\\"Read from\\\" line have to be less "
-                    "than \\\"read to\\\" line.\"" << endl;
+            cout << "Error: \"Read from\" line have to be less "
+                    "than \"read to\" line.\"" << endl;
+            delete &command;
             return;
         }
-
         // check correctness of bounds
         if (readFrom < 0 || readEnd > numRows) {
             cout << "Error: \"Illegal bounds of reading.\"" << endl;
+            delete &command;
             return;
         }
-
         // call read method
         read(readFrom, readEnd);
     }
@@ -348,20 +367,39 @@ void TextDataBase::inputHandler(string& commandStr) {
         if (command.size() > 1) {
             // remove first word == "write"
             command.erase(command.cbegin());
-
             // check if number of words in the vector == number of columns
             if (command.size() != numColumns) {
-                cout << "Error: \"Not enough words to write\"" << endl;
+                cout << "Error: \"Inappropriate number of words\"" << endl;
+                delete &command;
                 return;
             }
-
+            // perform deletion of deleted lines
+            rewriteFile(*this, false, &this->deletedLines);
             // call write method
             write(command);
+        }
+    }
+    else if (command[0] == "delete") {
+        if (command.size() > 1) {
+            if (stringIsNumber(command[1])) {
+                int index = stoi(command[1]);
+                if (index >= this->numRows - this->deletedLines.size())
+                    cout << "Error: deleted index is out of bounds" << endl;
+                else
+                    deleteLine(index); // change number of deleted lines
+            } else if (command[1] == "all") {
+                rewriteFile(*this, true, nullptr);
+            } else {
+                cout << "Error: unexpected word \"" << command[1] << "\"" << endl;
+            }
+        } else {
+            cout << "Error: the second param must be a number or \"all\"" << endl;
         }
     }
     else {
         cout << "Error: \"Illegal command.\"" << endl;
     }
+    delete &command;
 }
 
 /**
@@ -369,39 +407,47 @@ void TextDataBase::inputHandler(string& commandStr) {
  */
 void TextDataBase::read(int startLine, int endLine) {
     // binary reader
+    // binary reader
     ifstream input(pathDB, ios_base::binary);
 
     int startSkip = rowSizeBytes * startLine;
+    int availLines = getNumOfAvailableFiles(input, this->rowSizeBytes);
     input.seekg(startSkip);
 
     // print column names
     printTableColumnNames();
 
-    for (int i = startLine; i < endLine; ++i) {
-        // index of column
-        int columnIndex = 0;
-        string resultLine;
+    for (int i = startLine, printCounter = 0; i < endLine && i < availLines; ++i) {
+        if (!contains(this->deletedLines, i)) {
+            // index of column
+            int columnIndex = 0;
+            string resultLine;
 
-        while (columnIndex < numColumns) {
-            // type of current column
-            string type = columnTypes[columnIndex];
-            // choose a correct type
-            if (type == "int") {
-                int intRead = intReading(input);
-                resultLine.append(to_string(intRead)).append("  ");
+            while (columnIndex < numColumns) {
+                // type of current column
+                string type = columnTypes[columnIndex];
+                // choose a correct type
+                if (type == "int") {
+                    int intRead = intReading(input);
+                    resultLine.append(to_string(intRead)).append("  ");
+                }
+                else if (type == "double") {
+                    double doubleRead = doubleReading(input);
+                    resultLine.append(to_string(doubleRead)).append("  ");
+                }
+                    // type == "string"
+                else {
+                    string strRead = strReading(input, stringSize);
+                    resultLine.append(strRead).append("  ");
+                }
+                columnIndex++;
             }
-            else if (type == "double") {
-                double doubleRead = doubleReading(input);
-                resultLine.append(to_string(doubleRead)).append("  ");
-            }
-            // type == "string"
-            else {
-                string strRead = strReading(input, stringSize);
-                resultLine.append(strRead).append("  ");
-            }
-            columnIndex++;
+            cout << (printCounter++) << ") " << resultLine << endl;
+        } else {
+            // skip one row
+            input.seekg(this->rowSizeBytes, SEEK_CUR);
+            endLine++;
         }
-        cout << i << ") " << resultLine << endl;
     }
     input.close();
 }
@@ -449,6 +495,7 @@ void TextDataBase::write(vector<string> &words) {
             strWriting(output, words[i], stringSize);
         }
     }
+    this->bitLines->push_back(true);
     this->numRows++;
     output.close();
 }
@@ -466,6 +513,14 @@ void TextDataBase::strWriting(ofstream &output, string &value, int strSize) {
     output.write(value.c_str(), strSize);
 }
 
+void TextDataBase::deleteLine(int lineIndex) {
+    // compensate for displacement
+    int realIndex = getRealLineIndex(*this->bitLines, lineIndex);
+    // set as deleted
+    (*this->bitLines)[realIndex] = false;
+    this->deletedLines.insert(realIndex);
+}
+
 // A helper method
 bool TextDataBase::stringIsNumber(string &str) {
     for (char ch : str)
@@ -479,3 +534,73 @@ void TextDataBase::printTableColumnNames() {
         cout << "  | " << s;
     cout << "  |\n|------------------------------------------|" << endl;
 }
+
+void TextDataBase::rewriteFile(TextDataBase& obj, bool deleteContent,
+                               unordered_set<int> *deletedLinesSet) {
+    if (deleteContent) {
+        // delete the DB file
+        remove(obj.pathDB.c_str());
+        // create a new DB file
+        ofstream output(obj.pathDB, ios::binary);
+        output.close();
+        // change field values
+        obj.deletedLines.clear();
+        obj.numRows = 0;
+        obj.bitLines->clear();
+    }
+    else if (!deletedLinesSet->empty()) {
+        srand(time(nullptr));
+        // a random number for temporary file
+        int tempNum = rand();
+        // current file
+        ifstream input(obj.pathDB, ios_base::binary);
+        // new file writer
+        string tempFileName = dirDB + obj.tableName + to_string(tempNum) + ".bin";
+        ofstream output(tempFileName, ios::binary);
+        // a number of lines in the file
+        int numOfLines = getNumOfAvailableFiles(input, obj.rowSizeBytes);
+        for (int i = 0; i < numOfLines; ++i)
+        {
+            if (!contains(*deletedLinesSet, i)) {
+                unsigned char* line = new unsigned char[obj.rowSizeBytes];
+                input.read(reinterpret_cast<char*>(line), obj.rowSizeBytes);
+                output.write(reinterpret_cast<const char*>(line), obj.rowSizeBytes);
+                delete[] line;
+            } else {
+                // skip bytes
+                input.seekg(obj.rowSizeBytes, SEEK_CUR);
+            }
+        }
+        // close streams
+        input.close();
+        output.close();
+
+        // delete current file
+        remove(obj.pathDB.c_str());
+        // rename the temporary file to the original name
+        rename(tempFileName.c_str(), obj.pathDB.c_str());
+
+        // change filed values
+        obj.numRows = obj.numRows - deletedLinesSet->size();
+        obj.deletedLines.clear();
+        obj.bitLines->clear();
+    }
+}
+
+int TextDataBase::getRealLineIndex(vector<bool>& bits, int notRealIndex) {
+    // a real index
+    int index = 0;
+    // a special case
+    if (notRealIndex == 0 && !bits[0]) {
+        while (!bits[index]) index++;
+        return index;
+    }
+    while (index <= notRealIndex) {
+        if (!bits[index]) notRealIndex++;
+        index++;
+    }
+    return index - 1;
+}
+
+
+
