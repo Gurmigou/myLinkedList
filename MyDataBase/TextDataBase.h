@@ -31,12 +31,11 @@ private:
 
     // Parameters of stored files
     inline static const int tableNameLengthMeta = 30; // bytes
-    inline static const int idLengthMeta = 4; // bytes as standard int
 
     int numRows;
     int numColumns;
     int rowSizeBytes; // size of row in bytes
-    int stringSize;   // number of chars used in each string
+    int stringSize;   // number of chars (bytes) used in each string
 
     // the name of the table
     string tableName;
@@ -48,10 +47,10 @@ private:
     // may contain: string, int, double types
     vector<string>& columnTypes; // each element 10 bytes
     vector<string>& columnNames; // each element 30 bytes
-    unordered_set<int>& deletedLines;
 
     // a sequence of 0 and 1; 0 means that line was deleted; 1 mean that line is present
-    vector<bool>* bitLines = new vector<bool>();
+    vector<bool>* bitDeletedLines = new vector<bool>();
+    int numOfDelLines = 0;
 
     /**
      *  Processes incoming commands.
@@ -75,7 +74,32 @@ private:
      */
     void write(vector<string>& words);
 
+    /**
+     * @return {@true} if all the {@code values} corresponds to the types
+     *         of {@code this->columnTypes}. Otherwise, {@code false}
+     */
+    bool valuesCorrespondsToTypes(vector<string>& values);
+
+    /**
+     * Changes some parameters in order to perform a correct deletion in the future.
+     * Actually, deletion performs {@code rewriteFile()} method
+     * @param lineIndex - index of line that will be deleted in the future
+     */
     void deleteLine(int lineIndex);
+
+    /**
+     * Regulates all aspects of "set" command
+     * @param command - a vector which contains user's commands
+     */
+    void setOperator(vector<string>& command);
+    /**
+     * Sets a value of types: {@code int}, {@code double}, {@code string}
+     * @param skipBytes - where to set a new value
+     * @param value - value to be set
+     */
+    void setInt(int skipBytes, int value, FILE* file);
+    void setDouble(int skipBytes, double value, FILE* file);
+    void setStr(int skipBytes, string& value, FILE* file);
 
     // Helper methods for reading operation //
     static int intReading(ifstream& input);
@@ -145,41 +169,40 @@ private:
     static bool contains(vector<string>& vector, string& str);
 
     /**
-     * Checks if a {@code set} contains {@code value} value
-     * @return {@code true} if contains. Otherwise, {@code false}
-     */
-    static bool contains(unordered_set<int>& set, int value);
-
-    /**
      * @param reader - an input object
      * @return a number of files which are now stored in {@code NameIdAllTables} file
      */
     static int getNumOfAvailableFiles(ifstream& reader, int lineLengthInBytes);
 
-    /*  Serialization */
-    /*  Instruction:
-     *  1) save [numRows]       4 bytes
-     *  2) save [numColumns]    4 bytes
-     *  3) save [rowSizeBytes]  4 bytes
-     *  4) save [stringSize]    4 bytes
-     *  5) save [tableName]     30 bytes
-     *
-     *  (*) save columnTypes.size() integer
-     *  6) save [columnTypes]   7 bytes  * elements.size()
-     *
-     *  (*) save columnNames.size() integer
-     *  7) save [columnNames]   30 bytes * elements.size()
-     */
-
     /**
-     * Serializes current object into the file {@code serialPathDB}
-     * @param serialPath
+     *  Serialization:
+     *  Serializes current object into the file {@code serialPathDB}
+     *
+     *  Instruction:
+     *  1) save [numRows]                4 bytes
+     *  2) save [numColumns]             4 bytes
+     *  3) save [rowSizeBytes]           4 bytes
+     *  4) save [stringSize]             4 bytes
+     *  5) save [tableName]              30 bytes
+     *  6) save [numOfDelLines]          4 bytes
+     *
+     *  *) save columnTypes.size()       integer
+     *  7) save [columnTypes]            7 bytes  * elements.size()
+     *
+     *  *) save columnNames.size()       integer
+     *  8) save [columnNames]            30 bytes * elements.size()
+     *
+     *  *) save bitDeletedLines.size()   integer
+     *  9) save [bitDeletedLines]        1 byte * elements.size()
+     *
+     * @param serialPath - a path where data will be stored
      */
     void serializeTable(string& serialPath);
 
     // This method helps to serialize vectors
     void serializeVectorHelper(ofstream& output, vector<string>& vector,
                                         int oneDataBlockSize);
+    void serializeVectorHelper(ofstream& output, vector<bool>& vector);
 
     /**
      * Creates an object of data base using existing data
@@ -191,19 +214,14 @@ private:
     // This method helps to deserialize vectors
     static void deserializeVectorHelper(ifstream& input, vector<string>& vector,
                                         int oneDataBlockSize);
+    static void deserializeVectorHelper(ifstream& input, vector<bool>& vector);
 
     /**
      * Rewrite file according to the given conditions.
      * @param deleteContent - if is {@code true}, the file will be rewrite
-     *                        as an empty file. Moreover, if {@code deleteContent}
-     *                        value is {@code true}, a param {@code deletedLines}
-     *                        doesn't matter
-     * @param deletedLinesSet - if {@code deleteContent} is {@code false} then a file
-     *                        will be rewrite without index of lines which are
-     *                        contained in the {@code deletedLines} set
+     *                        as an empty file.
      */
-    static void rewriteFile(TextDataBase& obj, bool deleteContent,
-                            unordered_set<int>* deletedLinesSet);
+    static void rewriteFile(TextDataBase& obj, bool deleteContent);
 
     static int getRealLineIndex(vector<bool>& bits, int notRealIndex);
 
@@ -212,15 +230,12 @@ private:
 
     // constructor
     TextDataBase(int stringSize, vector<string>& columnTypes,
-                 vector<string>& columnNames, unordered_set<int>& deletedLines,
-                 int numColumns,  string& dbFileName);
+                 vector<string>& columnNames, int numColumns,  string& dbFileName);
 
     // default constructor
     TextDataBase(vector<string>& columnNames,
-                 vector<string>& columnTypes,
-                 unordered_set<int>& deletedLines)
-                 : columnNames(columnNames), columnTypes(columnTypes), deletedLines(deletedLines) {}
-
+                 vector<string>& columnTypes)
+                 : columnNames(columnNames), columnTypes(columnTypes) {}
 public:
     /**
      *  Runs a database

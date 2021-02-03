@@ -4,175 +4,6 @@
 #include "TextDataBase.h"
 
 /**
- *  Constructor
- */
-TextDataBase::TextDataBase(int stringSize,
-                           vector<string>& columnTypes,
-                           vector<string>& columnNames,
-                           unordered_set<int>& deletedLines,
-                           int numColumns,
-                           string& tableName) :
-        stringSize(stringSize), columnTypes(columnTypes),
-        columnNames(columnNames), deletedLines(deletedLines),
-        numColumns(numColumns), tableName(tableName)
-{
-    // create a path where data of DB will be stored
-    this->pathDB = createPathDB(tableName);
-    // create a path where db will be serialized
-    this->serialPathDB = createSerialPathDB(tableName);
-
-    this->numRows = 0;
-    this->rowSizeBytes = 0;
-
-    for (string type : columnTypes) {
-        if (type == "int")
-            this->rowSizeBytes += sizeof(int);
-        else if (type == "double")
-            this->rowSizeBytes += sizeof(double);
-        else // type == "string"
-            this->rowSizeBytes += stringSize;
-    }
-}
-
-/**
- *  Destructor
- */
-TextDataBase::~TextDataBase() {
-    delete &this->columnTypes;
-    delete &this->columnNames;
-    delete &this->deletedLines;
-}
-
-/* Meta block start */
-
-int TextDataBase::getNumOfAvailableFiles(ifstream& reader, int lineLengthInBytes) {
-    ifstream::pos_type begin = reader.tellg();
-    reader.seekg(0, ios::end);
-    ifstream::pos_type end = reader.tellg();
-
-    // return a cursor to the begin of the file
-    reader.seekg(0, ios::beg);
-    return (end - begin) / lineLengthInBytes;
-}
-
-bool TextDataBase::checkAnyTableIsAvailable(ifstream &reader) {
-    return getNumOfAvailableFiles(reader, tableNameLengthMeta) != 0;
-}
-
-string TextDataBase::createPathDB(string &tableName) {
-    return dirDB + tableName + ".bin";
-}
-
-string TextDataBase::createSerialPathDB(string &tableName) {
-    return dirSerialPathMeta + tableName + ".bin";
-}
-
-// todo delete pointer!!!
-vector<string>& TextDataBase::printAvailableTables(ifstream &reader) {
-
-    vector<string>* availableTableNames = new vector<string>();
-
-    for (int i = 0, files =
-            getNumOfAvailableFiles(reader, tableNameLengthMeta); i < files; ++i)
-    {
-        string tableNameLocal = strReading(reader, tableNameLengthMeta);
-        // print table name
-        cout << i << ") Table: " << tableNameLocal << endl;
-        // add values to the vector
-        (*availableTableNames).push_back(tableNameLocal);
-    }
-    // return a cursor to the begin of the file
-    reader.seekg(0, ios::beg);
-    return *availableTableNames;
-}
-
-
-TextDataBase* TextDataBase::deserializeTable(string& serialPath) {
-    vector<string>* colNames = new vector<string>();
-    vector<string>* colTypes = new vector<string>();
-    unordered_set<int>* delLines = new unordered_set<int>();
-
-    // restored object
-    TextDataBase* obj = new TextDataBase(*colNames, *colTypes, *delLines);
-
-    ifstream input(serialPath, ios_base::binary);
-    obj->numRows = intReading(input);
-    obj->numColumns = intReading(input);
-    obj->rowSizeBytes = intReading(input);
-    obj->stringSize = intReading(input);
-    obj->tableName = strReading(input, tableNameLengthMeta);
-    obj->pathDB = createPathDB(obj->tableName);
-    obj->serialPathDB = createSerialPathDB(obj->tableName);
-    deserializeVectorHelper(input, obj->columnTypes, 30);
-    deserializeVectorHelper(input, obj->columnNames, 30);
-    input.close();
-    return obj;
-}
-
-void TextDataBase::deserializeVectorHelper(ifstream& input,
-                                           vector<string>& vector,
-                                           int oneDataBlockSize)
-{
-    int dataLength = intReading(input);
-    for (int i = 0; i < dataLength; ++i) {
-        string s = strReading(input, oneDataBlockSize);
-        vector.push_back(s);
-    }
-}
-
-/**
- *  Serialization
- *  Instruction:
- *  1) save [numRows]       4 bytes
- *  2) save [numColumns]    4 bytes
- *  3) save [rowSizeBytes]  4 bytes
- *  4) save [stringSize]    4 bytes
- *  5) save [tableName]     30 bytes
- *
- *  *) save columnTypes.size() integer
- *  6) save [columnTypes]   7 bytes  * elements.size()
- *
- * (*) save columnNames.size() integer
- *  7) save [columnNames]   30 bytes * elements.size()
- *
- * @param serialPath - a path where data will be stored
- */
-void TextDataBase::serializeTable(string &serialPath) {
-    ofstream output(serialPath, ios_base::binary | ios_base::trunc);
-    // write data
-    intWriting(output, this->numRows);
-    intWriting(output, this->numColumns);
-    intWriting(output, this->rowSizeBytes);
-    intWriting(output, this->stringSize);
-    strWriting(output, tableName, tableNameLengthMeta);
-    serializeVectorHelper(output, this->columnTypes, 30);
-    serializeVectorHelper(output, this->columnNames, 30);
-    output.close();
-}
-
-
-void TextDataBase::serializeVectorHelper(ofstream &output,
-                                         vector<string>& vector,
-                                         int oneDataBlockSize)
-{
-    int dataLength = vector.size();
-    intWriting(output, dataLength);
-    for (int i = 0, size = vector.size(); i < size; ++i) {
-        strWriting(output, vector[i], oneDataBlockSize);
-    }
-}
-
-bool TextDataBase::contains(vector<string>& vector, string& str) {
-    for (const string& s : vector)
-        if (s == str) return true;
-    return false;
-}
-
-bool TextDataBase::contains(unordered_set<int>& set, int value) {
-    return set.find(value) != set.cend();
-}
-
-/**
  *  Runs a database
  */
 void TextDataBase::runDataBase() {
@@ -209,7 +40,8 @@ void TextDataBase::runDataBase() {
                         break;
                     }
                     if (!contains(availableTables, table)) {
-                        cout << "The database doesn't contain table \"" << table << "\"." << endl;
+                        cout << "The database doesn't contain table \"" << table
+                                                                << "\"." << endl;
                     } else {
                         string serialPathLocal = createSerialPathDB(table);
                         textDataBaseObj = deserializeTable(serialPathLocal);
@@ -230,8 +62,10 @@ void TextDataBase::runDataBase() {
         if (textDataBaseObj != nullptr) {
             cout << "Enter \"stop\" to terminate.\n\r"
                     "Enter \"leave\" to select a another table or create a new one. "
-                    "Commands: \n\r*) read [start] [end], \n\r*) write {value}, {value},"
-                    " ... \n\r*) delete {line_index \\ all}:" << endl;
+                    "Commands: \n\r*) read [start] [end], "
+                    "\n\r*) write {value}, {value}, ..."
+                    "\n\r*) delete {line_index \\ all},"
+                    "\n\r*) set {line_index} {field_name} {new_value}:" << endl;
             // runs available commands
             while (true) {
                 string command;
@@ -244,8 +78,7 @@ void TextDataBase::runDataBase() {
                     cout << "A command was done." << endl;
                 } else {
                     // remove deleted lines
-                    rewriteFile(*textDataBaseObj, false,
-                                &textDataBaseObj->deletedLines);
+                    rewriteFile(*textDataBaseObj, false);
                     // serialize current object
                     (*textDataBaseObj).serializeTable((*textDataBaseObj).serialPathDB);
                     if (command._Starts_with("stop"))
@@ -260,6 +93,167 @@ void TextDataBase::runDataBase() {
     // delete an object
     if (textDataBaseObj != nullptr)
         delete textDataBaseObj;
+}
+
+/**
+ *  Constructor
+ */
+TextDataBase::TextDataBase(int stringSize, vector<string>& columnTypes,
+                           vector<string>& columnNames, int numColumns, string& tableName) :
+        stringSize(stringSize), columnTypes(columnTypes),
+        columnNames(columnNames), numColumns(numColumns), tableName(tableName)
+{
+    // create a path where data of DB will be stored
+    this->pathDB = createPathDB(tableName);
+    // create a path where db will be serialized
+    this->serialPathDB = createSerialPathDB(tableName);
+
+    this->numRows = 0;
+    this->rowSizeBytes = 0;
+
+    for (string type : columnTypes) {
+        if (type == "int")
+            this->rowSizeBytes += sizeof(int);
+        else if (type == "double")
+            this->rowSizeBytes += sizeof(double);
+        else // type == "string"
+            this->rowSizeBytes += stringSize;
+    }
+}
+
+/**
+ *  Destructor
+ */
+TextDataBase::~TextDataBase() {
+    delete &this->columnTypes;
+    delete &this->columnNames;
+    delete this->bitDeletedLines;
+}
+
+/* Meta block start */
+
+int TextDataBase::getNumOfAvailableFiles(ifstream& reader, int lineLengthInBytes) {
+    ifstream::pos_type begin = reader.tellg();
+    reader.seekg(0, ios::end);
+    ifstream::pos_type end = reader.tellg();
+
+    // return a cursor to the begin of the file
+    reader.seekg(0, ios::beg);
+    return (end - begin) / lineLengthInBytes;
+}
+
+bool TextDataBase::checkAnyTableIsAvailable(ifstream &reader) {
+    return getNumOfAvailableFiles(reader, tableNameLengthMeta) != 0;
+}
+
+string TextDataBase::createPathDB(string &tableName) {
+    return dirDB + tableName + ".bin";
+}
+
+string TextDataBase::createSerialPathDB(string &tableName) {
+    return dirSerialPathMeta + tableName + ".bin";
+}
+
+vector<string>& TextDataBase::printAvailableTables(ifstream &reader) {
+
+    vector<string>* availableTableNames = new vector<string>();
+
+    for (int i = 0, files =
+            getNumOfAvailableFiles(reader, tableNameLengthMeta); i < files; ++i)
+    {
+        string tableNameLocal = strReading(reader, tableNameLengthMeta);
+        // print table name
+        cout << i << ") Table: " << tableNameLocal << endl;
+        // add values to the vector
+        (*availableTableNames).push_back(tableNameLocal);
+    }
+    // return a cursor to the begin of the file
+    reader.seekg(0, ios::beg);
+    return *availableTableNames;
+}
+
+TextDataBase* TextDataBase::deserializeTable(string& serialPath) {
+    vector<string>* colNames = new vector<string>();
+    vector<string>* colTypes = new vector<string>();
+
+    // restored object
+    TextDataBase* obj = new TextDataBase(*colNames, *colTypes);
+
+    ifstream input(serialPath, ios_base::binary);
+    obj->numRows = intReading(input);
+    obj->numColumns = intReading(input);
+    obj->rowSizeBytes = intReading(input);
+    obj->stringSize = intReading(input);
+    obj->tableName = strReading(input, tableNameLengthMeta);
+    obj->pathDB = createPathDB(obj->tableName);
+    obj->serialPathDB = createSerialPathDB(obj->tableName);
+    obj->numOfDelLines = intReading(input);
+    deserializeVectorHelper(input, obj->columnTypes, 30);
+    deserializeVectorHelper(input, obj->columnNames, 30);
+    deserializeVectorHelper(input, (*obj->bitDeletedLines));
+    input.close();
+    return obj;
+}
+
+void TextDataBase::
+     deserializeVectorHelper(ifstream& input, vector<string>& vector, int oneDataBlockSize)
+{
+    int dataLength = intReading(input);
+    for (int i = 0; i < dataLength; ++i) {
+        string s = strReading(input, oneDataBlockSize);
+        vector.push_back(s);
+    }
+}
+
+void TextDataBase::deserializeVectorHelper(ifstream& input, vector<bool>& vector) {
+    int dataLength = intReading(input);
+    for (int i = 0; i < dataLength; ++i) {
+        bool v;
+        input.read(reinterpret_cast<char*>(&v), sizeof(bool));
+        vector.push_back(v);
+    }
+}
+
+void TextDataBase::serializeTable(string &serialPath) {
+    ofstream output(serialPath, ios_base::binary | ios_base::trunc);
+    // write data
+    intWriting(output, this->numRows);
+    intWriting(output, this->numColumns);
+    intWriting(output, this->rowSizeBytes);
+    intWriting(output, this->stringSize);
+    strWriting(output, tableName, tableNameLengthMeta);
+    intWriting(output, this->numOfDelLines);
+    serializeVectorHelper(output, this->columnTypes, 30);
+    serializeVectorHelper(output, this->columnNames, 30);
+    serializeVectorHelper(output, *(this->bitDeletedLines));
+    output.close();
+}
+
+void TextDataBase::
+     serializeVectorHelper(ofstream &output, vector<string>& vector, int oneDataBlockSize)
+{
+    int dataLength = vector.size();
+    intWriting(output, dataLength);
+    for (int i = 0; i < dataLength; ++i) {
+        strWriting(output, vector[i], oneDataBlockSize);
+    }
+}
+
+void TextDataBase::
+    serializeVectorHelper(ofstream &output, vector<bool>& vector)
+{
+    int dataLength = vector.size();
+    intWriting(output, dataLength);
+    for (int i = 0; i < dataLength; ++i) {
+        bool val = vector[i];
+        output.write((const char*)&val, sizeof(bool));
+    }
+}
+
+bool TextDataBase::contains(vector<string>& vector, string& str) {
+    for (const string& s : vector)
+        if (s == str) return true;
+    return false;
 }
 
 TextDataBase& TextDataBase::askInitQuestions() {
@@ -288,13 +282,9 @@ TextDataBase& TextDataBase::askInitQuestions() {
         throw exception();
     }
 
-    // lines that were deleted
-    unordered_set<int>* deletedLines = new unordered_set<int>();
-
     // create an object
     TextDataBase* textDataBaseObj = new TextDataBase(
-            numOfCharsInString, columnTypesLocal,
-           columnNamesLocal, *deletedLines,
+            numOfCharsInString, columnTypesLocal, columnNamesLocal,
             columnNamesLocal.size(), tableName);
 
     // create a file
@@ -313,8 +303,7 @@ TextDataBase& TextDataBase::askInitQuestions() {
 /* Meta block end */
 
 // A helper method: parser
-vector<string>& TextDataBase::parseToWords(string s)
-{
+vector<string>& TextDataBase::parseToWords(string s) {
     vector<string>* words = new vector<string>();
     for (int i = 0, length = s.length(); i < length ; ) {
         if (s[i] != ' ') {
@@ -336,7 +325,6 @@ vector<string>& TextDataBase::parseToWords(string s)
 void TextDataBase::inputHandler(string& commandStr) {
     // separated words (commands)
     vector<string>& command = parseToWords(commandStr);
-
     if (command[0] == "read") {
         int readFrom = 0;
         int readEnd = numRows;
@@ -374,7 +362,7 @@ void TextDataBase::inputHandler(string& commandStr) {
                 return;
             }
             // perform deletion of deleted lines
-            rewriteFile(*this, false, &this->deletedLines);
+            rewriteFile(*this, false);
             // call write method
             write(command);
         }
@@ -383,22 +371,27 @@ void TextDataBase::inputHandler(string& commandStr) {
         if (command.size() > 1) {
             if (stringIsNumber(command[1])) {
                 int index = stoi(command[1]);
-                if (index >= this->numRows - this->deletedLines.size())
+                if (index >= this->numRows - this->numOfDelLines)
                     cout << "Error: deleted index is out of bounds" << endl;
                 else
                     deleteLine(index); // change number of deleted lines
             } else if (command[1] == "all") {
-                rewriteFile(*this, true, nullptr);
+                rewriteFile(*this, true);
             } else {
                 cout << "Error: unexpected word \"" << command[1] << "\"" << endl;
             }
-        } else {
+        } else
             cout << "Error: the second param must be a number or \"all\"" << endl;
-        }
     }
-    else {
+    else if (command[0] == "set") {
+        // set [lineIndex] [column_name] [new_value]
+        if (command.size() == 4) {
+            // regulates all the aspects of "set" command
+           setOperator(command);
+        } else
+            cout << "Error: inappropriate number of params" << endl;
+    } else
         cout << "Error: \"Illegal command.\"" << endl;
-    }
     delete &command;
 }
 
@@ -418,7 +411,7 @@ void TextDataBase::read(int startLine, int endLine) {
     printTableColumnNames();
 
     for (int i = startLine, printCounter = 0; i < endLine && i < availLines; ++i) {
-        if (!contains(this->deletedLines, i)) {
+        if ((*this->bitDeletedLines)[i]) {
             // index of column
             int columnIndex = 0;
             string resultLine;
@@ -435,8 +428,7 @@ void TextDataBase::read(int startLine, int endLine) {
                     double doubleRead = doubleReading(input);
                     resultLine.append(to_string(doubleRead)).append("  ");
                 }
-                    // type == "string"
-                else {
+                else { // type == "string"
                     string strRead = strReading(input, stringSize);
                     resultLine.append(strRead).append("  ");
                 }
@@ -476,28 +468,27 @@ string TextDataBase::strReading(ifstream &input, int strSize) {
  *  Writer
  */
 void TextDataBase::write(vector<string> &words) {
-    // binary writer
-    ofstream output(pathDB, ios_base::binary | ios_base::out | ios_base::app);
+    if (valuesCorrespondsToTypes(words)) {
+        // binary writer
+        ofstream output(pathDB, ios_base::binary | ios_base::out | ios_base::app);
 
-    for (int i = 0, size = words.size(); i < size; ++i) {
-        // current data type
-        string curType = columnTypes[i];
+        for (int i = 0, size = words.size(); i < size; ++i) {
+            // current data type
+            string curType = columnTypes[i];
 
-        // todo Добавить детальную проверку типов данных
-        if (curType == "int") {
-            intWriting(output, stoi(words[i]));
+            if (curType == "int")
+                intWriting(output, stoi(words[i]));
+            else if (curType == "double")
+                doubleWriting(output, stod(words[i].c_str()));
+            else // curType == "string"
+                strWriting(output, words[i], stringSize);
         }
-        else if (curType == "double") {
-            doubleWriting(output, stod(words[i].c_str()));
-        }
-        // curType == "string"
-        else {
-            strWriting(output, words[i], stringSize);
-        }
+        this->bitDeletedLines->push_back(true);
+        this->numRows++;
+        output.close();
+    } else {
+        cout << "Error: invalid parameter types" << endl;
     }
-    this->bitLines->push_back(true);
-    this->numRows++;
-    output.close();
 }
 
 // Writing helper methods //
@@ -513,12 +504,100 @@ void TextDataBase::strWriting(ofstream &output, string &value, int strSize) {
     output.write(value.c_str(), strSize);
 }
 
+bool TextDataBase::valuesCorrespondsToTypes(vector<string> &values) {
+    for (int i = 0, size = this->columnTypes.size(); i < size; ++i) {
+        string type = this->columnTypes[i];
+        if (type == "int") {
+            for (char ch : values[i])
+                if (ch > '9' || ch < '0') return false;
+        } else if (type == values[i]) {
+            for (char ch : type)
+                if (ch != ',' && (ch > '9' || ch < '0')) return false;
+        }
+    }
+    return true;
+}
+
 void TextDataBase::deleteLine(int lineIndex) {
     // compensate for displacement
-    int realIndex = getRealLineIndex(*this->bitLines, lineIndex);
+    int realIndex = getRealLineIndex(*this->bitDeletedLines, lineIndex);
     // set as deleted
-    (*this->bitLines)[realIndex] = false;
-    this->deletedLines.insert(realIndex);
+    (*this->bitDeletedLines)[realIndex] = false;
+    this->numOfDelLines++;
+}
+
+void TextDataBase::setOperator(vector<string> &command) {
+    int lineIndex;
+    // check if the first argument is a number
+    if (stringIsNumber(command[1])) {
+        lineIndex = stoi(command[1]);
+    } else {
+        cout << "Error: first argument must be a number" << endl;
+        delete &command;
+        return;
+    }
+    // check if line index is inbounds
+    if (lineIndex >= numRows) {
+        cout << "Error: line index is out of bounds" << endl;
+        delete &command;
+        return;
+    }
+    // check if a columnName is correct
+    if (!contains(this->columnNames, command[2])) {
+        cout << "Error: table \"" << this->tableName <<
+             "\" doesn't contain column \"" << command[2] << "\"" << endl;
+        delete &command;
+        return;
+    }
+    // get index of column
+    int columnIndex = 0;
+    for (int i = 0, size = this->columnNames.size(); i < size; ++i) {
+        if (this->columnNames[i] == command[2]) {
+            columnIndex = i;
+            break;
+        }
+    }
+    // number of bytes to skip
+    int skipBytes = lineIndex * this->rowSizeBytes;
+    for (int i = 0; i < columnIndex; ++i) {
+        if (this->columnTypes[i] == "string")
+            skipBytes += this->stringSize;
+        else if (this->columnTypes[i] == "int")
+            skipBytes += sizeof(int);
+        else // double
+            skipBytes += sizeof(double);
+    }
+    FILE* file = fopen(this->pathDB.c_str(), "r+b");
+    try {
+        // set the new value
+        if (this->columnTypes[columnIndex] == "int")
+            setInt(skipBytes, stoi(command[3]), file);
+        else if (this->columnTypes[columnIndex] == "string")
+            setStr(skipBytes, command[3], file);
+        else
+            setDouble(skipBytes, stod(command[3]), file);
+    } catch (exception& e) {
+        cout << "Error: type of new value is inappropriate" << endl;
+    }
+    fclose(file);
+}
+
+void TextDataBase::setInt(int skipBytes, int value, FILE* file) {
+    // binary writer
+    fseek(file, skipBytes, SEEK_SET);
+    fwrite(&value, sizeof(int), 1, file);
+}
+
+void TextDataBase::setDouble(int skipBytes, double value, FILE* file) {
+    // binary writer
+    fseek(file, skipBytes, SEEK_SET);
+    fwrite(&value, sizeof(double ), 1, file);
+}
+
+void TextDataBase::setStr(int skipBytes, string &value, FILE* file) {
+    // binary writer
+    fseek(file, skipBytes, SEEK_SET);
+    fwrite(value.c_str(), this->stringSize, 1, file);
 }
 
 // A helper method
@@ -529,26 +608,25 @@ bool TextDataBase::stringIsNumber(string &str) {
 }
 
 void TextDataBase::printTableColumnNames() {
-    cout << "|------------------------------------------|" << endl;
+    cout << "-------------------------------------------" << endl;
     for (const string& s : this->columnNames)
-        cout << "  | " << s;
-    cout << "  |\n|------------------------------------------|" << endl;
+        cout << "  |  " << s;
+    cout << "\n\r-------------------------------------------" << endl;
 }
 
-void TextDataBase::rewriteFile(TextDataBase& obj, bool deleteContent,
-                               unordered_set<int> *deletedLinesSet) {
-    if (deleteContent) {
+void TextDataBase::rewriteFile(TextDataBase& obj, bool deleteContent) {
+    if (deleteContent && obj.numRows > 0) {
         // delete the DB file
         remove(obj.pathDB.c_str());
         // create a new DB file
-        ofstream output(obj.pathDB, ios::binary);
+        ofstream output(obj.pathDB, ios_base::binary); // changed ios::binary todo
         output.close();
         // change field values
-        obj.deletedLines.clear();
         obj.numRows = 0;
-        obj.bitLines->clear();
+        obj.bitDeletedLines->clear();
+        obj.numOfDelLines = 0;
     }
-    else if (!deletedLinesSet->empty()) {
+    else if (obj.numOfDelLines > 0) {
         srand(time(nullptr));
         // a random number for temporary file
         int tempNum = rand();
@@ -561,7 +639,7 @@ void TextDataBase::rewriteFile(TextDataBase& obj, bool deleteContent,
         int numOfLines = getNumOfAvailableFiles(input, obj.rowSizeBytes);
         for (int i = 0; i < numOfLines; ++i)
         {
-            if (!contains(*deletedLinesSet, i)) {
+            if ((*obj.bitDeletedLines)[i]) {
                 unsigned char* line = new unsigned char[obj.rowSizeBytes];
                 input.read(reinterpret_cast<char*>(line), obj.rowSizeBytes);
                 output.write(reinterpret_cast<const char*>(line), obj.rowSizeBytes);
@@ -581,9 +659,9 @@ void TextDataBase::rewriteFile(TextDataBase& obj, bool deleteContent,
         rename(tempFileName.c_str(), obj.pathDB.c_str());
 
         // change filed values
-        obj.numRows = obj.numRows - deletedLinesSet->size();
-        obj.deletedLines.clear();
-        obj.bitLines->clear();
+        obj.numRows = obj.numRows - obj.bitDeletedLines->size();
+        obj.bitDeletedLines->clear();
+        obj.numOfDelLines = 0;
     }
 }
 
@@ -601,6 +679,3 @@ int TextDataBase::getRealLineIndex(vector<bool>& bits, int notRealIndex) {
     }
     return index - 1;
 }
-
-
-
