@@ -7,8 +7,7 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
-#include <unordered_set>
-#include <bitset>
+#include <functional>
 
 using namespace std;
 
@@ -31,6 +30,12 @@ private:
 
     // Parameters of stored files
     inline static const int tableNameLengthMeta = 30; // bytes
+
+    enum Types {
+        STRING,
+        INT,
+        DOUBLE
+    };
 
     int numRows;
     int numColumns;
@@ -66,7 +71,38 @@ private:
      * @param start - the line to start reading
      * @param end - the line to end reading
      */
-    void read(int startLine, int endLine);
+    void read(int startLine, int endLine, bool withFilter,
+              const function<bool(int& curColumn, string& curValue, Types type)>& lambda);
+
+    /**
+     * Regulates all aspects of "read" command
+     * @param command - a vector which contains user's commands
+     */
+    void readOperator(vector<string>& command);
+
+    /**
+     * Regulates all aspects of "write" command
+     * @param command - a vector which contains user's commands
+     */
+    void writeOperator(vector<string>& command);
+
+    /**
+     * Regulates all aspects of "delete" command
+     * @param command - a vector which contains user's commands
+     */
+    void deleteOperator(vector<string>& command);
+
+    /**
+     * Regulates all aspects of "readwhere" command
+     * @param command - a vector which contains user's commands
+     */
+    void readWhereOperator(vector<string>& command);
+
+    /**
+     * Regulates all aspects of "set" command
+     * @param command - a vector which contains user's commands
+     */
+    void setOperator(vector<string>& command);
 
     /**
      * Writes the input words into the database
@@ -87,11 +123,6 @@ private:
      */
     void deleteLine(int lineIndex);
 
-    /**
-     * Regulates all aspects of "set" command
-     * @param command - a vector which contains user's commands
-     */
-    void setOperator(vector<string>& command);
     /**
      * Sets a value of types: {@code int}, {@code double}, {@code string}
      * @param skipBytes - where to set a new value
@@ -202,7 +233,6 @@ private:
     // This method helps to serialize vectors
     void serializeVectorHelper(ofstream& output, vector<string>& vector,
                                         int oneDataBlockSize);
-    void serializeVectorHelper(ofstream& output, vector<bool>& vector);
 
     /**
      * Creates an object of data base using existing data
@@ -214,7 +244,7 @@ private:
     // This method helps to deserialize vectors
     static void deserializeVectorHelper(ifstream& input, vector<string>& vector,
                                         int oneDataBlockSize);
-    static void deserializeVectorHelper(ifstream& input, vector<bool>& vector);
+    static void deserializeVectorHelper(vector<bool>& vector, int numOfRows);
 
     /**
      * Rewrite file according to the given conditions.
