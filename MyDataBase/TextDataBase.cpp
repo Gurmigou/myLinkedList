@@ -4,13 +4,6 @@
 #include "TextDataBase.h"
 #include <algorithm>
 
-// todo
-/*
- * Не читает по предикату последнюю строку
- * Странности при удалении
- *
- */
-
 /**
  *  Runs a database
  */
@@ -35,22 +28,20 @@ void TextDataBase::runDataBase() {
         }
         else if (tableChoice._Starts_with("select")) {
             // checks if register contains at least one stored table
-            if (!checkAnyTableIsAvailable(reader)) {
+            if (!checkAnyTableIsAvailable(reader))
                 cout << "There is no available tables. Try to create a new one." << endl;
-            } else {
+            else {
                 vector<string>& availableTables = printAvailableTables(reader);
                 while (true) {
                     cout << "Enter \"leave\" to leave from the selection of table.\n\r"
                             "Select a table:" << endl;
                     string table;
                     getline(cin, table);
-                    if (table._Starts_with("leave")) {
+                    if (table._Starts_with("leave"))
                         break;
-                    }
-                    if (!contains(availableTables, table)) {
-                        cout << "The database doesn't contain table \"" << table
-                                                                << "\"." << endl;
-                    } else {
+                    if (!contains(availableTables, table))
+                        cout << "The database doesn't contain table \"" << table << "\"." << endl;
+                    else {
                         string serialPathLocal = createSerialPathDB(table);
                         textDataBaseObj = deserializeTable(serialPathLocal);
                         break;
@@ -69,7 +60,7 @@ void TextDataBase::runDataBase() {
         // work with the table
         if (textDataBaseObj != nullptr) {
             cout << "Enter \"stop\" to terminate.\n\r"
-                    "Enter \"leave\" to select a another table or create a new one. "
+                    "Enter \"leave\" to select an another table or create a new one. "
                     "Commands: \n\r*) read [start] [end], "
                     "\n\r*) write {value}, {value}, ..."
                     "\n\r*) delete {line_index \\ all},"
@@ -258,7 +249,7 @@ TextDataBase& TextDataBase::askInitQuestions() {
     getline(cin, names);
     auto& columnNamesLocal = parseToWords(names);
 
-    cout << "Enter types of columns:" << endl;
+    cout << "Enter types of columns (string / int / double) :" << endl;
     getline(cin, types);
     auto& columnTypesLocal = parseToWords(types);
 
@@ -700,7 +691,6 @@ void TextDataBase::rewriteFile(TextDataBase& obj, bool deleteContent) {
         string tempFileName = dirDB + obj.tableName + to_string(tempNum) + ".bin";
         ofstream output(tempFileName, ios::binary);
         // a number of lines in the file
-//        int numOfLines = getNumOfAvailableFiles(input, obj.rowSizeBytes);
         for (int i = 0; i < obj.numRows; ++i)
         {
             if ((*obj.bitDeletedLines)[i]) {
